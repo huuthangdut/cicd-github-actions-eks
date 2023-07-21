@@ -1,0 +1,126 @@
+name: Build and Deployment
+
+on: [push]
+
+jobs:
+  build:
+    name: Run TEST
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install node 18
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Lint files
+        run: yarn lint
+
+  staging:
+    name: Deploying STAGING
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == format('refs/heads/{0}', 'develop') && github.event_name == 'push' }}
+    needs: 'build'
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      EKS_CLUSTER_NAME: app-demo
+      EKS_NAMESPACE: default
+      DOCKER_REPOSITORY_NAME: app-demo
+      DOCKER_IMAGE_TAG: staging-${{ github.sha }}
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Check out code into directory
+        uses: actions/checkout@v2
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v1
+        with:
+          version: 'v1.27.3'
+        id: install
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_IMAGE_TAG }}
+
+      - name: Setup kubeconfig
+        run: |
+          aws eks --region ${{ secrets.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
+      
+      - name: Deploy image to Amazon EKS
+        run: |
+          kubectl apply -f eks/aws-auth.yaml
+          kubectl apply -f eks/deployment.yaml
+          kubectl apply -f eks/service.yaml
+
+      - name: Logout of Amazon ECR
+        if: always()
+        run: docker logout ${{ steps.login-ecr.outputs.registry }}
+
+  # production:
+  #   name: Deploying PRODUCTION
+  #   runs-on: ubuntu-latest
+  #   if: ${{ github.ref == format('refs/heads/{0}', 'main') && github.event_name == 'push' }}
+  #   needs: 'build'
+  #   env:
+  #     AWS_ACCESS_KEY_ID: ${{ secrets.CHATIVE_AWS_ACCESS_KEY_ID }}
+  #     AWS_SECRET_ACCESS_KEY: ${{ secrets.CHATIVE_AWS_SECRET_ACCESS_KEY }}
+  #     EKS_CLUSTER_NAME: app-demo
+  #     EKS_NAMESPACE: default
+  #     DOCKER_IMAGE_TAG: prod-${{ github.sha }}
+  #     DOCKER_REPOSITORY_NAME: app-demo
+
+  #   steps:
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v1
+  #       with:
+  #         aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ secrets.AWS_REGION }}
+
+  #     - name: Check out code into directory
+  #       uses: actions/checkout@v2
+
+  #     - name: Login to Amazon ECR
+  #       id: login-ecr
+  #       uses: aws-actions/amazon-ecr-login@v1
+
+  #     - name: Build, tag, and push image to Amazon ECR
+  #       env:
+  #         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+  #       run: |
+  #         docker build -t $ECR_REGISTRY/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_IMAGE_TAG }}
+  #         docker push $ECR_REGISTRY/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_IMAGE_TAG }}
+
+  #     - name: Setup kubeconfig
+  #       run: |
+  #         aws eks --region ${{ secrets.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
+
+  #     - name: Deploy image to Amazon EKS
+  #       run: |
+  #         kubectl apply -f eks/aws-auth.yaml
+  #         kubectl apply -f eks/deployment.yaml
+  #         kubectl apply -f eks/service.yaml
+
+  #     - name: Logout of Amazon ECR
+  #       if: always()
+  #       run: docker logout ${{ steps.login-ecr.outputs.registry }}
