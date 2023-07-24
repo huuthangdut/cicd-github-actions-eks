@@ -9,7 +9,7 @@ const HOST = '0.0.0.0';
 const app = express();
 app.get('/', (req, res) => {
   res.send(
-    `<body style='background-color:#283E5B'><h1 style='color: orange;text-align:center'>CI/CD Pipeline with Github actions & EKS ${os.hostname()}</h1></body>`,
+    `<body style='background-color:#283E5B'><h1 style='color: orange;text-align:center'>Test CI/CD Pipeline with Github actions & EKS ${os.hostname()}</h1></body>`,
   );
 });
 
