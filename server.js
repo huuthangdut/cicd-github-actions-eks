@@ -13,5 +13,11 @@ app.get('/', (req, res) => {
   );
 });
 
+app.get('/users', (req, res) => {
+  res.json({
+    "text": "123"
+  })
+});
+
 app.listen(PORT, HOST);
 console.log(`Running on http://${HOST}:${PORT}`);
